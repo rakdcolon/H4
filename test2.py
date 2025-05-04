@@ -8,14 +8,14 @@ from PIL import Image
 import torchvision.transforms as transforms
 import seaborn as sns
 from LeNet import LeNet5Modified
-from data import LocalDigitDataset
+from data import MNISTDataset
 
 def get_transformed_test_loader(transform):
     """
     Get a test loader with the specified transformation.
     """
     # Create dataset with the transform
-    test_dataset = LocalDigitDataset('digits', transform=transform, rbf_mode=False)
+    test_dataset = MNISTDataset(train=False, transform=transform)
     
     # Create data loader
     test_loader = DataLoader(
@@ -123,22 +123,27 @@ def main():
     # Define different transformations
     transformations = {
         'Standard': transforms.Compose([
+            transforms.Pad(2),  # Pad to 32x32
             transforms.ToTensor(),
         ]),
-        'Rotation10': transforms.Compose([
-            transforms.RandomRotation(30, fill=255),
+        'Rotation20': transforms.Compose([
+            transforms.Pad(2),  # Pad to 32x32
+            transforms.RandomRotation(20),
             transforms.ToTensor(),
         ]),
-        'Rotation30': transforms.Compose([
-            transforms.RandomRotation(60, fill=255),
+        'Rotation40': transforms.Compose([
+            transforms.Pad(2),  # Pad to 32x32
+            transforms.RandomRotation(40),
             transforms.ToTensor(),
         ]),
         'Shift': transforms.Compose([
-            transforms.RandomAffine(0, translate=(0.1, 0.1), fill=255),
+            transforms.Pad(2),  # Pad to 32x32
+            transforms.RandomAffine(0, translate=(0.1, 0.1)),
             transforms.ToTensor(),
         ]),
         'Scale': transforms.Compose([
-            transforms.RandomAffine(0, scale=(0.7, 1.3), fill=255),
+            transforms.Pad(2),  # Pad to 32x32
+            transforms.RandomAffine(0, scale=(0.4, 1.4)),
             transforms.ToTensor(),
         ])
     }

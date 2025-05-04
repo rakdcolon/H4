@@ -19,9 +19,9 @@ def get_device():
         return torch.device("cuda")  # NVIDIA CUDA
     return torch.device("cpu")
 
-def train_model(model, train_loader, test_loader, epochs=20, lr=0.001):
+def train_model(model, train_loader, test_loader, epochs=1000, lr=0.001, early_stopping_patience=5):
     """
-    Train the modified LeNet5 model with modern improvements.
+    Train the modified LeNet5 model with modern improvements and early stopping.
     """
     device = get_device()
     print(f"Using device: {device}")
@@ -40,6 +40,11 @@ def train_model(model, train_loader, test_loader, epochs=20, lr=0.001):
     train_errors = []
     test_errors = []
     
+    # Early stopping variables
+    best_test_error = float('inf')
+    best_model_state = None
+    epochs_without_improvement = 0
+
     # Training loop
     start_time = time.time()
     for epoch in range(epochs):
@@ -92,6 +97,17 @@ def train_model(model, train_loader, test_loader, epochs=20, lr=0.001):
         test_error = 1.0 - test_correct / test_total
         test_errors.append(test_error)
         
+        # Early stopping check
+        if test_error < best_test_error:
+            best_test_error = test_error
+            best_model_state = model.state_dict()  # Save best model state
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= early_stopping_patience:
+                print(f"Early stopping triggered at epoch {epoch+1}. Best test error: {best_test_error:.4f}")
+                break
+        
         # Update learning rate
         scheduler.step(test_loss)
         
@@ -105,10 +121,15 @@ def train_model(model, train_loader, test_loader, epochs=20, lr=0.001):
     total_time = time.time() - start_time
     print(f'\nTotal Training Time: {total_time:.2f}s')
     
+    # Restore best model state before saving
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+    
     # Plot error rates
     plt.figure(figsize=(10, 5))
-    plt.plot(range(1, epochs+1), train_errors, 'b-', label='Training Error')
-    plt.plot(range(1, epochs+1), test_errors, 'r-', label='Test Error')
+    actual_epochs = len(train_errors)  # Get the actual number of epochs run
+    plt.plot(range(1, actual_epochs+1), train_errors, 'b-', label='Training Error')
+    plt.plot(range(1, actual_epochs+1), test_errors, 'r-', label='Test Error')
     plt.title('Error Rates vs. Epochs')
     plt.xlabel('Epochs')
     plt.ylabel('Error Rate')
@@ -135,15 +156,24 @@ def main():
     np.random.seed(42)
     
     # Get data loaders with optimized settings
-    train_loader, test_loader = get_data_loaders(batch_size=64, use_local=True)  # Larger batch size for modified model
+    train_loader, test_loader = get_data_loaders(batch_size=64, use_local=False)  # Larger batch size for modified model
     
     # Create and train model
     model = LeNet5Modified()
-    model, train_errors, test_errors = train_model(model, train_loader, test_loader)
+    # Using early stopping with max_epochs=1000 and patience=10
+    # Training will stop earlier if test error doesn't improve for 10 epochs
+    model, train_errors, test_errors = train_model(
+        model, 
+        train_loader, 
+        test_loader, 
+        epochs=1000,  # Maximum possible epochs
+        early_stopping_patience=5  # Stop if no improvement for 10 epochs
+    )
     
     # Print final error rates
     print(f"\nFinal Training Error: {train_errors[-1]:.4f}")
     print(f"Final Test Error: {test_errors[-1]:.4f}")
+    print(f"Total epochs run: {len(train_errors)}")
 
 if __name__ == "__main__":
     main() 
