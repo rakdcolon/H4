@@ -8,16 +8,11 @@ from PIL import Image
 import torchvision.transforms as transforms
 import seaborn as sns
 from LeNet import LeNet5Modified
-from data import MNISTDataset
+from data import get_data_loaders, MNISTDataset
 
 def get_transformed_test_loader(transform):
-    """
-    Get a test loader with the specified transformation.
-    """
-    # Create dataset with the transform
     test_dataset = MNISTDataset(train=False, transform=transform)
     
-    # Create data loader
     test_loader = DataLoader(
         test_dataset,
         batch_size=64,
@@ -27,21 +22,13 @@ def get_transformed_test_loader(transform):
     return test_loader
 
 def test_model(model, test_loader, transform_name='Standard'):
-    """
-    Test the modified LeNet5 model with transformed data.
-    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     model.eval()
     
-    # Initialize confusion matrix
     confusion_matrix = np.zeros((10, 10), dtype=int)
+    most_confusing = {i: {'confidence': -1, 'image': None, 'true_label': None, 'pred_label': None} for i in range(10)}
     
-    # Track most confusing examples
-    most_confusing = {i: {'confidence': -1, 'image': None, 'true_label': None, 'pred_label': None} 
-                     for i in range(10)}
-    
-    # Track statistics
     correct = 0
     total = 0
     
@@ -50,14 +37,11 @@ def test_model(model, test_loader, transform_name='Standard'):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
             
-            # Get predictions
             _, predicted = outputs.max(1)
             
-            # Update confusion matrix
             for t, p in zip(targets.view(-1), predicted.view(-1)):
                 confusion_matrix[t.long(), p.long()] += 1
             
-            # Update most confusing examples
             for i in range(len(targets)):
                 true_label = targets[i].item()
                 pred_label = predicted[i].item()
@@ -69,27 +53,22 @@ def test_model(model, test_loader, transform_name='Standard'):
                     most_confusing[true_label]['true_label'] = true_label
                     most_confusing[true_label]['pred_label'] = pred_label
             
-            # Update accuracy
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
     
-    # Calculate error rate
     error_rate = 1.0 - correct / total
     
-    # Plot confusion matrix
     plt.figure(figsize=(10, 8))
-    sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues',
-                xticklabels=range(10), yticklabels=range(10))
+    sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=range(10), yticklabels=range(10))
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
     plt.title(f'Confusion Matrix - {transform_name}')
-    
-    # Save confusion matrix
+
     os.makedirs('results', exist_ok=True)
-    plt.savefig(f'results/confusion_matrix_{transform_name}.png')
+    os.makedirs('results/2', exist_ok=True)
+    plt.savefig(f'results/2/confusion_matrix_{transform_name}.png')
     plt.close()
     
-    # Plot most confusing examples
     plt.figure(figsize=(15, 10))
     for i in range(10):
         if most_confusing[i]['image'] is not None:
@@ -99,17 +78,15 @@ def test_model(model, test_loader, transform_name='Standard'):
             plt.axis('off')
     
     plt.suptitle(f'Most Confusing Examples - {transform_name}')
-    plt.savefig(f'results/most_confusing_{transform_name}.png')
+    plt.savefig(f'results/2/most_confusing_{transform_name}.png')
     plt.close()
     
     return error_rate, confusion_matrix, most_confusing
 
 def main():
-    # Set random seed for reproducibility
     torch.manual_seed(42)
     np.random.seed(42)
-    
-    # Load model
+
     model_path = 'LeNet2.pth'
     if not os.path.exists(model_path):
         print(f"Model file {model_path} not found. Please train the model first.")
@@ -120,39 +97,45 @@ def main():
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     
-    # Define different transformations
     transformations = {
         'Standard': transforms.Compose([
-            transforms.Pad(2),  # Pad to 32x32
+            transforms.Pad(2),
             transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
         ]),
         'Rotation20': transforms.Compose([
-            transforms.Pad(2),  # Pad to 32x32
+            transforms.Pad(2),
             transforms.RandomRotation(20),
             transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
         ]),
         'Rotation40': transforms.Compose([
-            transforms.Pad(2),  # Pad to 32x32
+            transforms.Pad(2),
             transforms.RandomRotation(40),
             transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
         ]),
         'Shift': transforms.Compose([
-            transforms.Pad(2),  # Pad to 32x32
+            transforms.Pad(2),
             transforms.RandomAffine(0, translate=(0.1, 0.1)),
             transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
         ]),
         'Scale': transforms.Compose([
-            transforms.Pad(2),  # Pad to 32x32
+            transforms.Pad(2),
             transforms.RandomAffine(0, scale=(0.4, 1.4)),
             transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
         ])
     }
     
-    # Test model with each transformation
     results = {}
     for name, transform in transformations.items():
         print(f"\nTesting with {name} transformation...")
-        test_loader = get_transformed_test_loader(transform)
+        _, test_loader = get_data_loaders(
+            batch_size=64,
+            test_transform=transform
+        )
         error_rate, confusion_matrix, most_confusing = test_model(model, test_loader, name)
         results[name] = {
             'error_rate': error_rate,
@@ -160,7 +143,6 @@ def main():
             'most_confusing': most_confusing
         }
         
-        # Print results
         print(f"Error Rate: {error_rate:.4f}")
         print("\nMost Confusing Examples:")
         for i in range(10):
@@ -170,7 +152,6 @@ def main():
                 print(f"  Predicted Label: {most_confusing[i]['pred_label']}")
                 print(f"  Confidence: {most_confusing[i]['confidence']:.4f}")
     
-    # Print summary
     print("\nSummary of Results:")
     for name, result in results.items():
         print(f"{name}: Error Rate = {result['error_rate']:.4f}")
