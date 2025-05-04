@@ -1,0 +1,149 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import matplotlib.pyplot as plt
+from LeNet import LeNet5Modified
+from data import get_data_loaders
+import os
+import time
+
+# Enable MPS fallback to CPU for unsupported operations
+os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
+
+def get_device():
+    """Get the best available device for training."""
+    if torch.backends.mps.is_available():
+        return torch.device("mps")  # Apple Metal Performance Shaders
+    elif torch.cuda.is_available():
+        return torch.device("cuda")  # NVIDIA CUDA
+    return torch.device("cpu")
+
+def train_model(model, train_loader, test_loader, epochs=20, lr=0.001):
+    """
+    Train the modified LeNet5 model with modern improvements.
+    """
+    device = get_device()
+    print(f"Using device: {device}")
+    model = model.to(device)
+    
+    # Cross entropy loss for the modified model
+    criterion = nn.CrossEntropyLoss()
+    
+    # Adam optimizer with weight decay
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    
+    # Learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2)
+    
+    # Track error rates
+    train_errors = []
+    test_errors = []
+    
+    # Training loop
+    start_time = time.time()
+    for epoch in range(epochs):
+        epoch_start = time.time()
+        
+        # Training
+        model.train()
+        train_loss = 0.0
+        train_correct = 0
+        train_total = 0
+        
+        for inputs, targets in train_loader:
+            inputs, targets = inputs.to(device), targets.to(device)
+            
+            # Forward pass
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            
+            # Track statistics
+            train_loss += loss.item()
+            _, predicted = outputs.max(1)
+            train_total += targets.size(0)
+            train_correct += predicted.eq(targets).sum().item()
+        
+        train_error = 1.0 - train_correct / train_total
+        train_errors.append(train_error)
+        
+        # Testing
+        model.eval()
+        test_loss = 0.0
+        test_correct = 0
+        test_total = 0
+        
+        with torch.no_grad():
+            for inputs, targets in test_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+                
+                test_loss += loss.item()
+                _, predicted = outputs.max(1)
+                test_total += targets.size(0)
+                test_correct += predicted.eq(targets).sum().item()
+        
+        test_error = 1.0 - test_correct / test_total
+        test_errors.append(test_error)
+        
+        # Update learning rate
+        scheduler.step(test_loss)
+        
+        epoch_time = time.time() - epoch_start
+        print(f'Epoch {epoch+1}/{epochs}:')
+        print(f'  Train Error: {train_error:.4f}')
+        print(f'  Test Error: {test_error:.4f}')
+        print(f'  Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
+        print(f'  Epoch Time: {epoch_time:.2f}s')
+    
+    total_time = time.time() - start_time
+    print(f'\nTotal Training Time: {total_time:.2f}s')
+    
+    # Plot error rates
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, epochs+1), train_errors, 'b-', label='Training Error')
+    plt.plot(range(1, epochs+1), test_errors, 'r-', label='Test Error')
+    plt.title('Error Rates vs. Epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Error Rate')
+    plt.legend()
+    plt.grid(True)
+    
+    # Save plot
+    os.makedirs('results', exist_ok=True)
+    plt.savefig('results/error_rates_modified.png')
+    plt.close()
+    
+    # Save model
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'model_class': 'LeNet5Modified'
+    }, 'LeNet2.pth')
+    print("Saved model to LeNet2.pth")
+    
+    return model, train_errors, test_errors
+
+def main():
+    # Set random seed for reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+    
+    # Get data loaders with optimized settings
+    train_loader, test_loader = get_data_loaders(batch_size=64, use_local=True)  # Larger batch size for modified model
+    
+    # Create and train model
+    model = LeNet5Modified()
+    model, train_errors, test_errors = train_model(model, train_loader, test_loader)
+    
+    # Print final error rates
+    print(f"\nFinal Training Error: {train_errors[-1]:.4f}")
+    print(f"Final Test Error: {test_errors[-1]:.4f}")
+
+if __name__ == "__main__":
+    main() 
